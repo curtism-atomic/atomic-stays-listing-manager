@@ -89,10 +89,11 @@ export async function scrapeEZCare(
     // ── Login ──────────────────────────────────────────────────────────────
     log("Logging into EZCare...");
     await page.goto(EZCARE_LOGIN_URL, { waitUntil: "domcontentloaded" });
-    await page.fill('input[name*="Login"], input[id*="Login"], input[type="text"]', username);
+    await page.fill('#txtLogin, input[name="txtLogin"], input[type="text"]', username);
     await page.fill('input[type="password"]', password);
-    await page.click('input[type="submit"], button[type="submit"], input[value*="Log"]');
-    await page.waitForURL(/dbAdmin|inspManager/, { timeout: 15000 });
+    // EZCare uses a __doPostBack button with id="btnRun"
+    await page.click('#btnRun, input[type="submit"], button[type="submit"], input[value*="Log"]');
+    await page.waitForURL(/dbAdmin|inspManager|propertyList|unitList/, { timeout: 20000 });
     log("Login successful");
 
     // ── Get unit list ──────────────────────────────────────────────────────
