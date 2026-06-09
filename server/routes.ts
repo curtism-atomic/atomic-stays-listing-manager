@@ -82,10 +82,13 @@ export function registerRoutes(httpServer: Server, app: Express) {
   });
 
   // ── Hostaway: fetch listing photos ────────────────────────────────────────
+  // Photos are embedded in the listing detail as `listingImages` — no separate endpoint exists
   app.get("/api/hostaway/listings/:id/photos", async (req, res) => {
     try {
-      const data = await hostawayGet(`/listings/${req.params.id}/photos`);
-      res.json(data);
+      const data = await hostawayGet(`/listings/${req.params.id}`);
+      const listing = data.result ?? data;
+      const images = listing.listingImages ?? [];
+      res.json({ status: "success", result: images });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
