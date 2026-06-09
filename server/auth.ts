@@ -10,7 +10,7 @@ const SESSION_SECRET = process.env.SESSION_SECRET || "atomic-stays-session-secre
 export function setupAuth(app: Express) {
   app.use(
     session({
-      name: "__Host-sid",
+      name: "sid",
       secret: SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
