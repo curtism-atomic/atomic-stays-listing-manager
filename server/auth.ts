@@ -8,6 +8,9 @@ const TEAM_PASSWORD = process.env.APP_PASSWORD || "AtomicStays2026";
 const SESSION_SECRET = process.env.SESSION_SECRET || "atomic-stays-session-secret-2026";
 
 export function setupAuth(app: Express) {
+  // Trust Render/Cloudflare proxy so secure cookies work behind TLS termination
+  app.set("trust proxy", 1);
+
   app.use(
     session({
       name: "sid",
@@ -16,7 +19,7 @@ export function setupAuth(app: Express) {
       saveUninitialized: false,
       store: new MemStore({ checkPeriod: 86400000 }),
       cookie: {
-        secure: true,
+        secure: "auto",
         httpOnly: true,
         sameSite: "lax",
         path: "/",
@@ -52,9 +55,13 @@ export function registerAuthRoutes(app: Express) {
     const { password } = req.body;
     if (password === TEAM_PASSWORD) {
       (req.session as any).authenticated = true;
-      return res.json({ success: true });
+      req.session.save((err) => {
+        if (err) return res.status(500).json({ success: false, message: "Session error" });
+        return res.json({ success: true });
+      });
+    } else {
+      return res.status(401).json({ success: false, message: "Incorrect password" });
     }
-    return res.status(401).json({ success: false, message: "Incorrect password" });
   });
 
   app.post("/api/auth/logout", (req: Request, res: Response) => {
