@@ -47,7 +47,11 @@ async function hostawayPut(path: string, body: object) {
     },
     body: JSON.stringify(body),
   });
-  return res.json();
+  const data = await res.json();
+  if (!res.ok || data.status === "error" || data.code >= 400) {
+    throw new Error(data.message || data.error || `HTTP ${res.status}`);
+  }
+  return data;
 }
 
 export function registerRoutes(httpServer: Server, app: Express) {
@@ -110,19 +114,31 @@ export function registerRoutes(httpServer: Server, app: Express) {
     // Run async
     (async () => {
       const results: string[] = [];
+      let successCount = 0, errorCount = 0;
       for (const id of listingIds) {
         try {
           // Get current listing to merge
           const current = await hostawayGet(`/listings/${id}`);
           const listing = current.result || current;
-          const merged = { ...listing, ...fields };
+          // Only send fields that Hostaway accepts — strip internal/read-only keys
+          const readOnly = ["id","accountId","externalListingName","listingImages",
+            "customFieldValues","channellistings","pricingRules","taxes","fees"];
+          const base: Record<string,any> = {};
+          for (const [k,v] of Object.entries(listing)) {
+            if (!readOnly.includes(k)) base[k] = v;
+          }
+          const merged = { ...base, ...fields };
           await hostawayPut(`/listings/${id}`, merged);
-          results.push(`✓ ${id}`);
+          results.push(`✓ ${listing.name || id}`);
+          successCount++;
         } catch (e: any) {
           results.push(`✗ ${id}: ${e.message}`);
+          errorCount++;
         }
       }
-      storage.updatePushJobStatus(job.id, "done", results.join("\n"));
+      storage.updatePushJobStatus(job.id, "done",
+        `Updated ${successCount}/${listingIds.length} listings${errorCount ? ` (${errorCount} errors)` : ""}\n` + results.join("\n")
+      );
     })();
 
     res.json({ jobId: job.id, message: "Bulk update started" });
