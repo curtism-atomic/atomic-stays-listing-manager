@@ -300,33 +300,31 @@ export async function scrapeEZCare(
 
   const uniqueUnits = Array.from(allUnitMap.entries()).map(([guid, name]) => ({ guid, name }));
 
-  log(`Found ${uniqueUnits.length} units. Starting detail pull...`);
+  log(`Found ${uniqueUnits.length} units. Starting detail pull (concurrent batches of 10)...`);
 
-  // ── Pull each unit detail ──────────────────────────────────────────────
-  for (let i = 0; i < uniqueUnits.length; i++) {
-    const unit = uniqueUnits[i];
+  // ── Pull each unit detail — concurrent batches of 10 ──────────────────
+  const CONCURRENCY = 10;
+
+  async function fetchUnitDetail(unit: { guid: string; name: string }, index: number): Promise<EZCareUnit | null> {
     try {
-      log(`[${i + 1}/${uniqueUnits.length}] Pulling: ${unit.name || unit.guid}`);
+      log(`[${index + 1}/${uniqueUnits.length}] Pulling: ${unit.name || unit.guid}`);
       const detailUrl = `${EZCARE_DETAIL_BASE}/propertyDetailV2.aspx?Id=${unit.guid}&b=s`;
       const html = await httpGet(detailUrl, jar);
 
       if (html.includes("login.aspx")) {
-        errors.push(`Session expired at unit ${i + 1}`);
-        break;
+        errors.push(`Session expired at unit ${index + 1}`);
+        return null;
       }
 
-      // Extract fields using exact EZCare hidden field IDs
       const doorCode = extractInputValue(html, "Main_hiddenDOORCODE") || extractFieldByLabel(html, ["Door Code"]);
       const gateCode = extractRepeaterFieldByCode(html, "GATECODE") || extractFieldByLabel(html, ["Gate Code"]);
       const lockboxCode = extractRepeaterFieldByCode(html, "LOCKBOXCODE") || extractFieldByLabel(html, ["Lockbox Code"]);
       const lockboxLocation = extractRepeaterFieldByCode(html, "LockboxLocation") || extractFieldByLabel(html, ["Lockbox Location"]);
       const amenitiesCode = extractRepeaterFieldByCode(html, "ComAmenAccessCode") || extractFieldByLabel(html, ["Amenities"]);
-      // Admin note uses Main_TxtAdminUnitNote
       const adminNote = extractTextareaValue(html, "Main_TxtAdminUnitNote") || findLargestTextarea(html);
-
       const parsed = parseAdminNote(adminNote);
 
-      units.push({
+      return {
         guid: unit.guid,
         name: unit.name,
         doorCode,
@@ -340,15 +338,20 @@ export async function scrapeEZCare(
         garageCode: parsed.garageCode || "",
         lockboxGuestUse: parsed.lockboxGuestUse || lockboxCode || "",
         lockboxCompanyOnly: parsed.lockboxCompanyOnly || "",
-      });
-
-      // Small delay — be polite to the server
-      await new Promise(r => setTimeout(r, 200));
+      };
     } catch (e: any) {
       const errMsg = `Error pulling ${unit.name} (${unit.guid}): ${e.message}`;
       log(errMsg);
       errors.push(errMsg);
+      return null;
     }
+  }
+
+  for (let i = 0; i < uniqueUnits.length; i += CONCURRENCY) {
+    const batch = uniqueUnits.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(batch.map((u, j) => fetchUnitDetail(u, i + j)));
+    for (const r of results) { if (r) units.push(r); }
+    log(`Batch done: ${Math.min(i + CONCURRENCY, uniqueUnits.length)}/${uniqueUnits.length} units processed`);
   }
 
   log(`Done. Pulled ${units.length} units, ${errors.length} errors.`);
