@@ -251,21 +251,54 @@ export async function scrapeEZCare(
   }
   log("Login successful");
 
-  // ── Get unit list ──────────────────────────────────────────────────────
-  // EZCare loads all units on a single page (no pagination needed)
+  // ── Get unit list (paginated via ASP.NET postback) ──────────────────────
+  // EZCare shows 100 units per page. Pages 2+ require a __doPostBack POST.
   log("Loading units list...");
-  const pageHtml = await httpGet(EZCARE_UNITS_URL, jar);
-  if (pageHtml.includes("login.aspx")) throw new Error("Session expired fetching unit list");
-  log("Collecting unit list...");
-  const allUnitLinks = extractLinks(pageHtml, /[?&]Id=([a-f0-9\-]{36})/i);
+  let currentPageHtml = await httpGet(EZCARE_UNITS_URL, jar);
+  if (currentPageHtml.includes("login.aspx")) throw new Error("Session expired fetching unit list");
 
-  // Deduplicate
-  const seen = new Set<string>();
-  const uniqueUnits = allUnitLinks.filter(u => {
-    if (!u.guid || seen.has(u.guid)) return false;
-    seen.add(u.guid);
-    return true;
-  });
+  const allUnitMap = new Map<string, string>(); // guid -> name
+  let pageNum = 1;
+
+  while (true) {
+    log(`Collecting unit list page ${pageNum}...`);
+    const pageLinks = extractLinks(currentPageHtml, /[?&]Id=([a-f0-9\-]{36})/i);
+    let newOnPage = 0;
+    for (const u of pageLinks) {
+      if (!allUnitMap.has(u.guid)) { allUnitMap.set(u.guid, u.name); newOnPage++; }
+    }
+    log(`Page ${pageNum}: ${pageLinks.length} units, ${newOnPage} new. Total so far: ${allUnitMap.size}`);
+
+    // Check if there's a next page in the ASP.NET pager
+    const nextPageNum = pageNum + 1;
+    const hasNextPage = currentPageHtml.includes(`'_ctl0$Main$PropertyListAspNetPager','${nextPageNum}'`);
+    if (!hasNextPage) break;
+
+    // POST the ASP.NET postback to navigate to next page
+    const vs = extractHidden(currentPageHtml, "__VIEWSTATE");
+    const vsg2 = extractHidden(currentPageHtml, "__VIEWSTATEGENERATOR");
+    const pp = extractHidden(currentPageHtml, "__PREVIOUSPAGE");
+    const pagerBody = new URLSearchParams({
+      __EVENTTARGET: "_ctl0$Main$PropertyListAspNetPager",
+      __EVENTARGUMENT: String(nextPageNum),
+      __LASTFOCUS: "",
+      __VIEWSTATE: vs,
+      __VIEWSTATEGENERATOR: vsg2,
+      __PREVIOUSPAGE: pp,
+      Main_ddlUnitStatus: "",
+      Main_ddlJobStatus: "",
+      Main_ddlLocation: "",
+      Main_ddlZone: "",
+      Main_ddlUnitGroup: "",
+      Main_txtSearch: "",
+    }).toString();
+    const { html: nextHtml } = await httpPost(EZCARE_UNITS_URL, pagerBody, jar, EZCARE_UNITS_URL);
+    if (nextHtml.includes("login.aspx")) break;
+    currentPageHtml = nextHtml;
+    pageNum++;
+  }
+
+  const uniqueUnits = Array.from(allUnitMap.entries()).map(([guid, name]) => ({ guid, name }));
 
   log(`Found ${uniqueUnits.length} units. Starting detail pull...`);
 
