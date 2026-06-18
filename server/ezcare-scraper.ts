@@ -302,7 +302,7 @@ export async function scrapeEZCare(
   const uniqueUnits = Array.from(allUnitMap.entries()).map(([guid, name]) => ({ guid, name }));
 
   // ── Pull each unit detail — concurrent batches ──────────────────
-  const CONCURRENCY = 5; // Keep memory low on Render's 512MB free tier
+  const CONCURRENCY = 3; // Keep memory low on Render's 512MB free tier
 
   log(`Found ${uniqueUnits.length} units. Starting detail pull (concurrent batches of ${CONCURRENCY})...`);
 
@@ -310,10 +310,11 @@ export async function scrapeEZCare(
     try {
       log(`[${index + 1}/${uniqueUnits.length}] Pulling: ${unit.name || unit.guid}`);
       const detailUrl = `${EZCARE_DETAIL_BASE}/propertyDetailV2.aspx?Id=${unit.guid}&b=s`;
-      const html = await httpGet(detailUrl, jar);
+      let html = await httpGet(detailUrl, jar);
 
       if (html.includes("login.aspx")) {
         errors.push(`Session expired at unit ${index + 1}`);
+        html = ""; // free memory
         return null;
       }
 
@@ -323,6 +324,7 @@ export async function scrapeEZCare(
       const lockboxLocation = extractRepeaterFieldByCode(html, "LockboxLocation") || extractFieldByLabel(html, ["Lockbox Location"]);
       const amenitiesCode = extractRepeaterFieldByCode(html, "ComAmenAccessCode") || extractFieldByLabel(html, ["Amenities"]);
       const adminNote = extractTextareaValue(html, "Main_TxtAdminUnitNote") || findLargestTextarea(html);
+      html = ""; // free the large HTML string before returning
       const parsed = parseAdminNote(adminNote);
 
       return {
@@ -348,17 +350,29 @@ export async function scrapeEZCare(
     }
   }
 
+  let totalProcessed = 0;
   for (let i = 0; i < uniqueUnits.length; i += CONCURRENCY) {
     const batch = uniqueUnits.slice(i, i + CONCURRENCY);
     const results = await Promise.all(batch.map((u, j) => fetchUnitDetail(u, i + j)));
     const batchUnits: EZCareUnit[] = [];
-    for (const r of results) { if (r) { units.push(r); batchUnits.push(r); } }
+    for (const r of results) {
+      if (r) {
+        batchUnits.push(r);
+        // Only accumulate in units[] if no onBatch callback (caller needs them)
+        if (!onBatch) units.push(r);
+      }
+    }
+    totalProcessed += batchUnits.length;
     log(`Batch done: ${Math.min(i + CONCURRENCY, uniqueUnits.length)}/${uniqueUnits.length} units processed`);
     // Fire incremental save callback so data is persisted progressively
     if (batchUnits.length > 0 && onBatch) onBatch(batchUnits);
+    // Small pause between batches to allow GC and avoid rate limits
+    await new Promise(r => setTimeout(r, 100));
   }
+  // When using onBatch, units[] is empty — use totalProcessed for count
+  const unitCount = onBatch ? totalProcessed : units.length;
 
-  log(`Done. Pulled ${units.length} units, ${errors.length} errors.`);
+  log(`Done. Pulled ${unitCount} units, ${errors.length} errors.`);
   return { units, errors };
 }
 

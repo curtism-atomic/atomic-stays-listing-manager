@@ -290,10 +290,10 @@ export function registerRoutes(httpServer: Server, app: Express) {
           log(`Saved batch: ${saved} matched. Running total — matched: ${totalMatched}, saved: ${totalSaved}`);
         };
 
-        const { units, errors } = await scrapeEZCare(username, password, log, onBatch);
+        const { errors } = await scrapeEZCare(username, password, log, onBatch);
 
         storage.updatePushJobStatus(job.id, "done",
-          `✓ EZCare sync complete\nUnits scraped: ${units.length}\nMatched to Hostaway: ${totalMatched}\nSaved: ${totalSaved}${errors.length ? `\nErrors: ${errors.slice(0,5).join("; ")}` : ""}`
+          `✓ EZCare sync complete\nUnits scraped: ${totalMatched + (errors.length)}\nMatched to Hostaway: ${totalMatched}\nSaved: ${totalSaved}${errors.length ? `\nErrors: ${errors.slice(0,5).join("; ")}` : ""}`
         );
       } catch (e: any) {
         storage.updatePushJobStatus(job.id, "error", `Sync failed: ${e.message}`);
