@@ -264,7 +264,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
         storage.updatePushJobStatus(job.id, "running", progressLines.slice(-40).join("\n"));
       };
       try {
-        const { units, errors } = await scrapeEZCare(username, password, log);
+        // Fetch Hostaway listings BEFORE scraping so we can match+save each batch incrementally
         log("Fetching Hostaway listings for matching...");
         const allListings: any[] = [];
         let offset = 0;
@@ -276,14 +276,24 @@ export function registerRoutes(httpServer: Server, app: Express) {
           if (page.length < 100) break;
           offset += 100;
         }
-        log(`Matching ${units.length} EZCare units to ${allListings.length} Hostaway listings...`);
-        const matched = matchEZCareToHostaway(units, allListings);
-        const matchedCount = matched.filter(m => m.hostawayId).length;
-        const unmatched = matched.filter(m => !m.hostawayId).map(m => m.ezUnit.name);
-        if (unmatched.length) log(`Unmatched: ${unmatched.slice(0,10).join(", ")}${unmatched.length > 10 ? ` (+${unmatched.length - 10} more)` : ""}`);
-        const { saved, skipped } = saveEZCareData(matched);
+        log(`Loaded ${allListings.length} Hostaway listings. Starting EZCare scrape...`);
+
+        let totalSaved = 0;
+        let totalMatched = 0;
+
+        // onBatch: called after each 10-unit concurrent batch — match & save immediately
+        const onBatch = (batch: any[]) => {
+          const matched = matchEZCareToHostaway(batch, allListings);
+          totalMatched += matched.filter(m => m.hostawayId).length;
+          const { saved } = saveEZCareData(matched);
+          totalSaved += saved;
+          log(`Saved batch: ${saved} matched. Running total — matched: ${totalMatched}, saved: ${totalSaved}`);
+        };
+
+        const { units, errors } = await scrapeEZCare(username, password, log, onBatch);
+
         storage.updatePushJobStatus(job.id, "done",
-          `✓ EZCare sync complete\nUnits scraped: ${units.length}\nMatched to Hostaway: ${matchedCount}\nSaved: ${saved}  Skipped: ${skipped}${errors.length ? `\nErrors: ${errors.slice(0,5).join("; ")}` : ""}`
+          `✓ EZCare sync complete\nUnits scraped: ${units.length}\nMatched to Hostaway: ${totalMatched}\nSaved: ${totalSaved}${errors.length ? `\nErrors: ${errors.slice(0,5).join("; ")}` : ""}`
         );
       } catch (e: any) {
         storage.updatePushJobStatus(job.id, "error", `Sync failed: ${e.message}`);

@@ -215,7 +215,8 @@ function parseAdminNote(note: string): Partial<EZCareUnit> {
 export async function scrapeEZCare(
   username: string,
   password: string,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  onBatch?: (batch: EZCareUnit[]) => void
 ): Promise<{ units: EZCareUnit[]; errors: string[] }> {
   const log = (msg: string) => { console.log(msg); onProgress?.(msg); };
   const errors: string[] = [];
@@ -350,8 +351,11 @@ export async function scrapeEZCare(
   for (let i = 0; i < uniqueUnits.length; i += CONCURRENCY) {
     const batch = uniqueUnits.slice(i, i + CONCURRENCY);
     const results = await Promise.all(batch.map((u, j) => fetchUnitDetail(u, i + j)));
-    for (const r of results) { if (r) units.push(r); }
+    const batchUnits: EZCareUnit[] = [];
+    for (const r of results) { if (r) { units.push(r); batchUnits.push(r); } }
     log(`Batch done: ${Math.min(i + CONCURRENCY, uniqueUnits.length)}/${uniqueUnits.length} units processed`);
+    // Fire incremental save callback so data is persisted progressively
+    if (batchUnits.length > 0 && onBatch) onBatch(batchUnits);
   }
 
   log(`Done. Pulled ${units.length} units, ${errors.length} errors.`);

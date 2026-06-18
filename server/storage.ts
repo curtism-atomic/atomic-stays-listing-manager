@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import {
   fieldTemplates, propertyOverrides, photoCaption, pushJobs,
   type FieldTemplate, type InsertFieldTemplate,
@@ -137,7 +137,7 @@ export const storage: IStorage = {
     return db.insert(pushJobs).values({ ...data, createdAt: new Date() }).returning().get();
   },
   getPushJobs(limit = 20) {
-    return db.select().from(pushJobs).all().slice(0, limit);
+    return db.select().from(pushJobs).orderBy(desc(pushJobs.id)).limit(limit).all();
   },
   updatePushJobStatus(id, status, details) {
     db.update(pushJobs).set({
