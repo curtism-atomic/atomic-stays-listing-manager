@@ -301,10 +301,10 @@ export async function scrapeEZCare(
 
   const uniqueUnits = Array.from(allUnitMap.entries()).map(([guid, name]) => ({ guid, name }));
 
-  log(`Found ${uniqueUnits.length} units. Starting detail pull (concurrent batches of 10)...`);
+  // ── Pull each unit detail — concurrent batches ──────────────────
+  const CONCURRENCY = 5; // Keep memory low on Render's 512MB free tier
 
-  // ── Pull each unit detail — concurrent batches of 10 ──────────────────
-  const CONCURRENCY = 10;
+  log(`Found ${uniqueUnits.length} units. Starting detail pull (concurrent batches of ${CONCURRENCY})...`);
 
   async function fetchUnitDetail(unit: { guid: string; name: string }, index: number): Promise<EZCareUnit | null> {
     try {

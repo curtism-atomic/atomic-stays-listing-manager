@@ -1,8 +1,8 @@
 import session from "express-session";
-import MemoryStore from "memorystore";
+import ConnectSQLite from "connect-sqlite3";
 import type { Express, Request, Response, NextFunction } from "express";
 
-const MemStore = MemoryStore(session);
+const SQLiteStore = ConnectSQLite(session);
 
 const TEAM_PASSWORD = process.env.APP_PASSWORD || "AtomicStays2026";
 const SESSION_SECRET = process.env.SESSION_SECRET || "atomic-stays-session-secret-2026";
@@ -17,7 +17,7 @@ export function setupAuth(app: Express) {
       secret: SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
-      store: new MemStore({ checkPeriod: 86400000 }),
+      store: new SQLiteStore({ db: "sessions.db", dir: ".", table: "sessions" }) as any,
       cookie: {
         secure: "auto",
         httpOnly: true,
