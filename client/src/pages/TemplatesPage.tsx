@@ -20,17 +20,23 @@ const CATEGORIES = [
 // Pre-defined field keys by category
 const FIELD_DEFS: Record<string, Array<{ key: string; label: string; multiline?: boolean }>> = {
   hostaway: [
-    { key: "guestAccessDescription", label: "Guest Access", multiline: true },
-    { key: "guestInteractionDescription", label: "Guest Interaction", multiline: true },
+    { key: "airbnbAccess", label: "Guest Access", multiline: true },
+    { key: "airbnbInteraction", label: "Guest Interaction", multiline: true },
     { key: "houseRules", label: "House Rules", multiline: true },
-    { key: "checkInInstructions", label: "Check-in Instructions", multiline: true },
-    { key: "checkOutInstructions", label: "Check-out Instructions", multiline: true },
+    { key: "specialInstruction", label: "Check-in / Special Instructions", multiline: true },
+    { key: "cleaningInstruction", label: "Check-out / Cleaning Instructions", multiline: true },
     { key: "wifiUsername", label: "Wi-Fi Username" },
     { key: "wifiPassword", label: "Wi-Fi Password" },
+    { key: "doorSecurityCode", label: "Door Security Code" },
+    { key: "keyPickup", label: "Key Pickup Instructions", multiline: true },
   ],
   airbnb: [
-    { key: "guestAccessDescription", label: "Guest Access", multiline: true },
-    { key: "guestInteractionDescription", label: "Guest Interaction", multiline: true },
+    { key: "airbnbAccess", label: "Guest Access", multiline: true },
+    { key: "airbnbInteraction", label: "Guest Interaction", multiline: true },
+    { key: "airbnbSpace", label: "The Space", multiline: true },
+    { key: "airbnbNeighborhoodOverview", label: "Neighborhood Overview", multiline: true },
+    { key: "airbnbTransit", label: "Getting Around", multiline: true },
+    { key: "airbnbNotes", label: "Other Things to Note", multiline: true },
     { key: "houseRules", label: "House Rules", multiline: true },
   ],
   ezcare: [
