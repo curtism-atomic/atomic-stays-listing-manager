@@ -117,19 +117,11 @@ export function registerRoutes(httpServer: Server, app: Express) {
       let successCount = 0, errorCount = 0;
       for (const id of listingIds) {
         try {
-          // Get current listing to merge
-          const current = await hostawayGet(`/listings/${id}`);
-          const listing = current.result || current;
-          // Only send fields that Hostaway accepts — strip internal/read-only keys
-          const readOnly = ["id","accountId","externalListingName","listingImages",
-            "customFieldValues","channellistings","pricingRules","taxes","fees"];
-          const base: Record<string,any> = {};
-          for (const [k,v] of Object.entries(listing)) {
-            if (!readOnly.includes(k)) base[k] = v;
-          }
-          const merged = { ...base, ...fields };
-          await hostawayPut(`/listings/${id}`, merged);
-          results.push(`✓ ${listing.name || id}`);
+          // Send ONLY the changed fields — Hostaway silently ignores updates
+          // when the full listing body is sent (nested objects like listingAmenities
+          // cause the update to be swallowed without error).
+          await hostawayPut(`/listings/${id}`, fields);
+          results.push(`✓ ${id}`);
           successCount++;
         } catch (e: any) {
           results.push(`✗ ${id}: ${e.message}`);
