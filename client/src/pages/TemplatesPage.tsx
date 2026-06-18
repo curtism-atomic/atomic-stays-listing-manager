@@ -29,6 +29,7 @@ const FIELD_DEFS: Record<string, Array<{ key: string; label: string; multiline?:
     { key: "wifiPassword", label: "Wi-Fi Password" },
     { key: "doorSecurityCode", label: "Door Security Code" },
     { key: "keyPickup", label: "Key Pickup Instructions", multiline: true },
+    { key: "airbnbNotes", label: "Listing Notes", multiline: true },
   ],
   airbnb: [
     { key: "airbnbAccess", label: "Guest Access", multiline: true },
