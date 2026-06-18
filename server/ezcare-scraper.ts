@@ -5,9 +5,9 @@
 
 import { storage } from "./storage";
 
-const EZCARE_BASE = "https://www.ezcare.io/inspManager";
-const EZCARE_LOGIN_URL = `${EZCARE_BASE}/login.aspx`;
-const EZCARE_UNITS_URL = `${EZCARE_BASE}/dbAdmin/propertyListV2.aspx?from=menu&s=0`;
+const EZCARE_LOGIN_URL = "https://www.ezcare.io/inspManager/login.aspx";
+const EZCARE_UNITS_URL = "https://www.ezcare.io/dbAdmin/propertyListV2.aspx?from=menu&s=0";
+const EZCARE_DETAIL_BASE = "https://www.ezcare.io/dbAdmin";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -158,6 +158,21 @@ function extractFieldByLabel(html: string, labelTexts: string[]): string {
   return "";
 }
 
+// EZCare stores gate/lockbox/amenity codes in repeater hidden fields:
+// hiddenCode_N = field code (e.g. "GATECODE"), hiddenValue_N = the actual value
+// We find the index where hiddenCode=code, then grab the corresponding value from a nearby text input
+function extractRepeaterFieldByCode(html: string, code: string): string {
+  // Find the index of this code in the repeater
+  const codeRe = new RegExp(`hiddenCode[^"]*"[^"]*"[^>]*value="${code}"`, "i");
+  const m = codeRe.exec(html);
+  if (!m) return "";
+  // Look for a text input within 1500 chars after this hidden field
+  const after = html.slice(m.index, m.index + 1500);
+  const inputVal = after.match(/<input[^>]*type="text"[^>]*value="([^"]*)"/i)
+    || after.match(/value="([^"]+)"[^>]*type="text"/i);
+  return inputVal ? inputVal[1].trim() : "";
+}
+
 // ── Admin note parser ──────────────────────────────────────────────────────
 
 function parseAdminNote(note: string): Partial<EZCareUnit> {
@@ -229,35 +244,12 @@ export async function scrapeEZCare(
   log("Login successful");
 
   // ── Get unit list ──────────────────────────────────────────────────────
+  // EZCare loads all units on a single page (no pagination needed)
   log("Loading units list...");
-  const allUnitLinks: Array<{ guid: string; name: string }> = [];
-  let pageHtml = await httpGet(EZCARE_UNITS_URL, jar);
-  let pageNum = 0;
-
-  while (true) {
-    pageNum++;
-    log(`Collecting unit list page ${pageNum}...`);
-
-    const links = extractLinks(pageHtml, /[?&]Id=([a-f0-9\-]{36})/i);
-    allUnitLinks.push(...links);
-
-    // Look for next page link — EZCare pagination uses s= parameter
-    const nextPageMatch = pageHtml.match(/href="([^"]*propertyListV2[^"]*s=(\d+)[^"]*)"[^>]*>[^<]*[Nn]ext|>/i)
-      || pageHtml.match(/href="([^"]*propertyListV2[^"]*s=(\d+)[^"]*)"/i);
-
-    if (!nextPageMatch || links.length === 0) break;
-
-    const nextUrl = nextPageMatch[1].startsWith("http")
-      ? nextPageMatch[1]
-      : `${EZCARE_BASE}/${nextPageMatch[1].replace(/^\.?\//, "")}`;
-
-    // Don't loop back to s=0
-    const nextS = parseInt(nextPageMatch[2] || "0");
-    if (nextS === 0 && pageNum > 1) break;
-
-    pageHtml = await httpGet(nextUrl, jar);
-    if (pageHtml.includes("login.aspx")) break; // session expired
-  }
+  const pageHtml = await httpGet(EZCARE_UNITS_URL, jar);
+  if (pageHtml.includes("login.aspx")) throw new Error("Session expired fetching unit list");
+  log("Collecting unit list...");
+  const allUnitLinks = extractLinks(pageHtml, /[?&]Id=([a-f0-9\-]{36})/i);
 
   // Deduplicate
   const seen = new Set<string>();
@@ -274,7 +266,7 @@ export async function scrapeEZCare(
     const unit = uniqueUnits[i];
     try {
       log(`[${i + 1}/${uniqueUnits.length}] Pulling: ${unit.name || unit.guid}`);
-      const detailUrl = `${EZCARE_BASE}/dbAdmin/propertyDetailV2.aspx?Id=${unit.guid}&b=s`;
+      const detailUrl = `${EZCARE_DETAIL_BASE}/propertyDetailV2.aspx?Id=${unit.guid}&b=s`;
       const html = await httpGet(detailUrl, jar);
 
       if (html.includes("login.aspx")) {
@@ -282,13 +274,14 @@ export async function scrapeEZCare(
         break;
       }
 
-      // Extract fields by common IDs/names used in EZCare
-      const doorCode = extractInputValue(html, "txtDoorCode") || extractFieldByLabel(html, ["Door Code", "DoorCode"]);
-      const gateCode = extractInputValue(html, "txtGateCode") || extractFieldByLabel(html, ["Gate Code", "GateCode"]);
-      const lockboxCode = extractInputValue(html, "txtLockboxCode") || extractInputValue(html, "txtLockBox") || extractFieldByLabel(html, ["Lockbox Code", "Lock Box"]);
-      const lockboxLocation = extractInputValue(html, "txtLockboxLocation") || extractFieldByLabel(html, ["Lockbox Location"]);
-      const amenitiesCode = extractInputValue(html, "txtAmenitiesCode") || extractInputValue(html, "txtCommunityCode") || extractFieldByLabel(html, ["Amenities", "Community Amenities"]);
-      const adminNote = extractTextareaValue(html, "txtAdminNote") || extractTextareaValue(html, "txtNote") || findLargestTextarea(html);
+      // Extract fields using exact EZCare hidden field IDs
+      const doorCode = extractInputValue(html, "Main_hiddenDOORCODE") || extractFieldByLabel(html, ["Door Code"]);
+      const gateCode = extractRepeaterFieldByCode(html, "GATECODE") || extractFieldByLabel(html, ["Gate Code"]);
+      const lockboxCode = extractRepeaterFieldByCode(html, "LOCKBOXCODE") || extractFieldByLabel(html, ["Lockbox Code"]);
+      const lockboxLocation = extractRepeaterFieldByCode(html, "LockboxLocation") || extractFieldByLabel(html, ["Lockbox Location"]);
+      const amenitiesCode = extractRepeaterFieldByCode(html, "ComAmenAccessCode") || extractFieldByLabel(html, ["Amenities"]);
+      // Admin note uses Main_TxtAdminUnitNote
+      const adminNote = extractTextareaValue(html, "Main_TxtAdminUnitNote") || findLargestTextarea(html);
 
       const parsed = parseAdminNote(adminNote);
 
