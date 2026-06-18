@@ -331,27 +331,37 @@ export function matchEZCareToHostaway(
   function normalize(s: string): string {
     return s.toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
   }
+  // Decode EZCare internal codes like CO.AVO.15HIGHLANDSLN.309 -> "15 highlands ln 309"
+  function decodeEZCode(s: string): string {
+    // Strip state prefix (CO.XXX.) then split on dots/uppercase boundaries
+    const stripped = s.replace(/^[A-Z]{2}\.[A-Z]+\./, "");
+    return stripped.replace(/\./, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  }
   function scoreMatch(a: string, b: string): number {
     const na = normalize(a);
     const nb = normalize(b);
     if (na === nb) return 1.0;
-    const wa = new Set(na.split(" ").filter(w => w.length > 2));
-    const wb = new Set(nb.split(" ").filter(w => w.length > 2));
+    const wa = new Set(na.split(" ").filter(w => w.length > 1));
+    const wb = new Set(nb.split(" ").filter(w => w.length > 1));
     const intersection = [...wa].filter(w => wb.has(w)).length;
     const union = new Set([...wa, ...wb]).size;
     return union > 0 ? intersection / union : 0;
   }
   return ezUnits.map(unit => {
+    // Build all name variants for this EZCare unit to match against
+    const ezVariants = [unit.name, decodeEZCode(unit.name)];
     let best: { id: string; score: number } | null = null;
     for (const listing of hostawayListings) {
-      const nameScore = scoreMatch(unit.name, listing.name);
-      const addrScore = listing.address ? scoreMatch(unit.name, listing.address) : 0;
-      const score = Math.max(nameScore, addrScore);
-      if (!best || score > best.score) best = { id: String(listing.id), score };
+      for (const ezName of ezVariants) {
+        const nameScore = scoreMatch(ezName, listing.name);
+        const addrScore = listing.address ? scoreMatch(ezName, listing.address) : 0;
+        const score = Math.max(nameScore, addrScore);
+        if (!best || score > best.score) best = { id: String(listing.id), score };
+      }
     }
     return {
       ezUnit: unit,
-      hostawayId: best && best.score >= 0.3 ? best.id : null,
+      hostawayId: best && best.score >= 0.25 ? best.id : null,
       matchScore: best?.score ?? 0,
     };
   });
