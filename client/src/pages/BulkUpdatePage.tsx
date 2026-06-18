@@ -67,10 +67,13 @@ export default function BulkUpdatePage() {
 
   const listings = listingsData ?? [];
   const filtered = useMemo(() =>
-    listings.filter((l: any) =>
-      !search || l.name?.toLowerCase().includes(search.toLowerCase()) ||
-      String(l.id).includes(search)
-    ),
+    listings.filter((l: any) => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return l.name?.toLowerCase().includes(q) ||
+        l.address?.toLowerCase().includes(q) ||
+        String(l.id).includes(q);
+    }),
     [listings, search]
   );
 

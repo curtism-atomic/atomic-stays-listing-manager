@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Wrench, Save, RefreshCw, Clock, ChevronDown, ChevronUp, CheckCircle2, AlertCircle } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 
 const EZCARE_FIELDS = [
   { key: "doorCodeGuest", label: "Door Code (Guest)", hint: "Guest entry code" },
@@ -41,6 +41,7 @@ export default function EZCarePage() {
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [syncJobId, setSyncJobId] = useState<number | null>(null);
   const [showSyncLog, setShowSyncLog] = useState(false);
+  const [listingSearch, setListingSearch] = useState("");
 
   const { data: listingsData, isLoading: listingsLoading } = useQuery({
     queryKey: ["/api/hostaway/listings"],
@@ -137,6 +138,15 @@ export default function EZCarePage() {
   });
 
   const listings = listingsData ?? [];
+  const filteredListings = useMemo(() => {
+    if (!listingSearch) return listings;
+    const q = listingSearch.toLowerCase();
+    return listings.filter((l: any) =>
+      l.name?.toLowerCase().includes(q) ||
+      l.address?.toLowerCase().includes(q) ||
+      String(l.id).includes(q)
+    );
+  }, [listings, listingSearch]);
   const selectedListingObj = listings.find((l: any) => String(l.id) === selectedListing);
   const lastSync = syncStatus?.lastSync;
   const syncRunning = syncJob?.status === "running" || syncMutation.isPending;
@@ -228,18 +238,30 @@ export default function EZCarePage() {
               {listingsLoading ? (
                 <Skeleton className="h-9 w-full" />
               ) : (
-                <Select value={selectedListing} onValueChange={loadOverrides}>
-                  <SelectTrigger data-testid="select-ezcare-listing">
-                    <SelectValue placeholder="Choose a property to view its EZCare data..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {listings.map((l: any) => (
-                      <SelectItem key={l.id} value={String(l.id)}>
-                        {l.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <>
+                  <Input
+                    placeholder="Search by name or address..."
+                    value={listingSearch}
+                    onChange={e => setListingSearch(e.target.value)}
+                    className="mb-1.5"
+                  />
+                  <Select value={selectedListing} onValueChange={(v) => { loadOverrides(v); setListingSearch(""); }}>
+                    <SelectTrigger data-testid="select-ezcare-listing">
+                      <SelectValue placeholder="Choose a property..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredListings.length === 0 && (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">No properties match</div>
+                      )}
+                      {filteredListings.map((l: any) => (
+                        <SelectItem key={l.id} value={String(l.id)}>
+                          <span>{l.name}</span>
+                          {l.address && <span className="block text-xs text-muted-foreground">{l.address}</span>}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
               )}
             </div>
           </CardContent>
