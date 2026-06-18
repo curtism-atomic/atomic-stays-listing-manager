@@ -103,17 +103,25 @@ function extractHidden(html: string, name: string): string {
   return m ? m[1] : "";
 }
 
-function extractLinks(html: string, pattern: RegExp): Array<{ guid: string; name: string }> {
-  const results: Array<{ guid: string; name: string }> = [];
-  const linkRe = /<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+function extractLinks(html: string, _pattern: RegExp): Array<{ guid: string; name: string }> {
+  // EZCare property list has 3 propertyDetailV2 links per unit:
+  //   1. numeric ID (e.g. "560564")
+  //   2. internal code (e.g. "CO.VA.5020MainGorePl.A29")
+  //   3. human address (e.g. "5020 Main Gore Place 29")  <-- best for matching
+  // We collect all three and keep the longest text (the address) per GUID.
+  const byGuid = new Map<string, { guid: string; name: string }>();
+  const linkRe = /<a\s[^>]*href="([^"]*propertyDetailV2[^"]*[?&]Id=([a-f0-9\-]{36})[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
   let m: RegExpExecArray | null;
   while ((m = linkRe.exec(html)) !== null) {
-    const href = m[1];
-    const text = m[2].replace(/<[^>]+>/g, "").trim();
-    const guidMatch = href.match(pattern);
-    if (guidMatch) results.push({ guid: guidMatch[1], name: text });
+    const guid = m[2];
+    const text = m[3].replace(/<[^>]+>/g, "").trim();
+    const existing = byGuid.get(guid);
+    // Keep the longest name (the human-readable address)
+    if (!existing || text.length > existing.name.length) {
+      byGuid.set(guid, { guid, name: text });
+    }
   }
-  return results;
+  return Array.from(byGuid.values());
 }
 
 function extractInputValue(html: string, idOrName: string): string {
