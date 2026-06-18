@@ -383,13 +383,24 @@ export function matchEZCareToHostaway(
   hostawayListings: Array<{ id: string | number; name: string; address?: string }>
 ): Array<{ ezUnit: EZCareUnit; hostawayId: string | null; matchScore: number }> {
   function normalize(s: string): string {
-    return s.toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
+    // Strip ordinal suffixes so 23rd == 23, 1st == 1, etc.
+    return s.toLowerCase()
+      .replace(/(\d+)(st|nd|rd|th)\b/g, "$1")
+      .replace(/[^a-z0-9]/g, " ")
+      .replace(/\s+/g, " ").trim();
   }
   // Decode EZCare internal codes like CO.AVO.15HIGHLANDSLN.309 -> "15 highlands ln 309"
   function decodeEZCode(s: string): string {
-    // Strip state prefix (CO.XXX.) then split on dots/uppercase boundaries
-    const stripped = s.replace(/^[A-Z]{2}\.[A-Z]+\./, "");
-    return stripped.replace(/\./, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+    // Strip state prefix (CO.XXX.) and any -TEMP suffix
+    const stripped = s.replace(/^[A-Z]{2}\.[A-Z]+\./, "").replace(/-TEMP$/i, "");
+    return stripped
+      .replace(/\./g, " ")                         // dots -> spaces
+      .replace(/([a-z])([A-Z])/g, "$1 $2")         // camelCase -> spaces
+      .replace(/([a-zA-Z])([0-9])/g, "$1 $2")      // letter->digit (e.g. S1827 -> S 1827)
+      .replace(/([0-9])([a-zA-Z])/g, "$1 $2")      // digit->letter (e.g. 1017E -> 1017 E)
+      .replace(/\b([A-Z])([A-Z][a-z])/g, "$1 $2") // single-letter abbrev (SMadison -> S Madison)
+      .toLowerCase()
+      .replace(/\s+/g, " ").trim();
   }
   function scoreMatch(a: string, b: string): number {
     const na = normalize(a);
