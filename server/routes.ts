@@ -315,4 +315,22 @@ export function registerRoutes(httpServer: Server, app: Express) {
     const lastSync = jobs.find(j => j.jobType === "ezcare_sync") || null;
     res.json({ lastSync });
   });
+
+  // ── EZCare: reset any stuck running job (for cron use) ───────────────────
+  app.post("/api/ezcare/sync/reset-stuck", (req, res) => {
+    const jobs = storage.getPushJobs(5);
+    const stuck = jobs.find(j => j.jobType === "ezcare_sync" && j.status === "running");
+    if (stuck) {
+      const age = stuck.createdAt
+        ? Date.now() - new Date(stuck.createdAt as string).getTime()
+        : Infinity;
+      // Only reset if >30 minutes old (so we don't kill a freshly started sync)
+      if (age > 30 * 60 * 1000) {
+        storage.updatePushJobStatus(stuck.id, "error", "Marked failed: job was stuck in 'running' state (reset by cron)");
+        return res.json({ reset: true, jobId: stuck.id });
+      }
+      return res.json({ reset: false, reason: "Job is running but less than 30 minutes old — not resetting" });
+    }
+    res.json({ reset: false, reason: "No stuck job found" });
+  });
 }
